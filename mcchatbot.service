@@ -1,0 +1,16 @@
+[Unit]
+Description=Minecraft Chatbot bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=minecraft
+Group=minecraft
+WorkingDirectory=/usr/local/games/mcchatbot
+ExecStart=/usr/local/games/mcchatbot/mcchatbot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
