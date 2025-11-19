@@ -898,7 +898,3 @@ func runScreenBatch(ctx context.Context, cfg Config, commands []string) error {
 	}
 	return nil
 }
-
-// logInteraction already defined earlier? yes. Need rest functions
-
-// remaining functions: tool executors, helpers, and shell integration. Each needs comments etc.
