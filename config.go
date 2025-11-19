@@ -10,8 +10,12 @@ import (
 
 const (
 	defaultModel        = "meta-llama/llama-4-scout-17b-16e-instruct"
-	defaultLogPath      = "/usr/local/games/minecraft_server/Enderforce2/logs/latest.log"
-	defaultScreenTarget = "mc-Enderforce2"
+	defaultLogPath      = "/usr/local/games/minecraft_server/MyServer/logs/latest.log"
+	defaultScreenTarget = "mc-MyServer"
+
+	// 🎓 LEARNING NOTE: This is the "system prompt" - a 96-line instruction manual that shapes
+	// Alfred's entire personality! This is how we make AI assistants behave consistently.
+	// Try changing these instructions to see how Alfred's responses change!
 	defaultSystemPrompt = `
 You are Alfred, the upbeat camp counselor, adventure guide, and morale-boosting NPC of a Minecraft multiplayer world for kids aged 10–16.
 

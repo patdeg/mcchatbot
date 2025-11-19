@@ -109,10 +109,15 @@ type Usage struct {
 // callLLM prepares the conversation, tool list, and routing state before handing control
 // to chatWithTools, returning the final model response plus any tool logs. It is the
 // single entry point the rest of the bot uses to talk to Demeterics.
+//
+// 🎓 LEARNING NOTE: This is how we talk to the AI! We send:
+// 1. System prompt (Alfred's personality & instructions)
+// 2. User message (what the player said)
+// 3. Available tools (functions Alfred can call, like /tp or /time)
 func callLLM(ctx context.Context, cfg Config, evt ChatEvent, userMessage string) (string, []ToolInvocation, error) {
 	tools, executors := availableTooling(cfg)
 	messages := []Message{
-		{Role: "system", Content: cfg.SystemPrompt},
+		{Role: "system", Content: cfg.SystemPrompt},   // "You are Alfred, the camp counselor..."
 		{Role: "user", Content: fmt.Sprintf("Player %s says: %s", evt.Player, userMessage)},
 	}
 	return chatWithTools(ctx, cfg, evt, messages, tools, executors)
@@ -121,10 +126,20 @@ func callLLM(ctx context.Context, cfg Config, evt ChatEvent, userMessage string)
 // chatWithTools manages the iterative tool-call loop, executing helper functions when
 // requested and re-feeding their output to the LLM until a final answer is produced.
 // The helper keeps transcripts tidy so the main routine only sees the result.
+//
+// 🎓 LEARNING NOTE: This is the "tool calling loop"! Here's how it works:
+// 1. Send conversation + tool definitions to AI
+// 2. AI responds with either: text answer OR tool call request
+// 3. If tool call: execute it (e.g., run `/tp player1 player2`), add result to conversation
+// 4. Loop back to step 1 (up to 3 times) until AI gives final text answer
+//
+// Example: Player: "Alfred tp me to Steve"
+//   Loop 1: AI calls teleport_player(target="Steve") → we run command → success message
+//   Loop 2: AI sees success, responds: "Done! You're now with Steve 🎯"
 func chatWithTools(ctx context.Context, cfg Config, evt ChatEvent, messages []Message, tools []ToolDefinition, executors map[string]ToolExecutor) (string, []ToolInvocation, error) {
 	totalTokens := 0
 	var toolLogs []ToolInvocation
-	for hop := 0; hop < 3; hop++ {
+	for hop := 0; hop < 3; hop++ { // Max 3 hops prevents infinite loops
 		var toolChoice interface{}
 		if len(tools) > 0 {
 			toolChoice = "auto"
@@ -147,19 +162,24 @@ func chatWithTools(ctx context.Context, cfg Config, evt ChatEvent, messages []Me
 			return "", toolLogs, errors.New("no choices returned")
 		}
 		msg := resp.Choices[0].Message
+
+		// 🎓 LEARNING NOTE: Check if AI wants to call a tool (function)
 		if len(msg.ToolCalls) > 0 && len(executors) > 0 {
-			messages = append(messages, msg)
+			messages = append(messages, msg) // Add AI's tool request to conversation
 			handled := false
 			for _, call := range msg.ToolCalls {
 				exec, ok := executors[call.Function.Name]
 				if !ok {
-					continue
+					continue // Tool not found, skip
 				}
 				handled = true
 				invocation := ToolInvocation{
 					Name:      call.Function.Name,
 					Arguments: strings.TrimSpace(call.Function.Arguments),
 				}
+
+				// 🎓 LEARNING NOTE: Execute the tool! This runs the actual Minecraft command
+				// For example: exec() might run "tp Steve Alice" via screen
 				output, err := exec(ctx, cfg, evt, call)
 				if err != nil {
 					output = fmt.Sprintf("error: %v", err)
@@ -168,15 +188,18 @@ func chatWithTools(ctx context.Context, cfg Config, evt ChatEvent, messages []Me
 					invocation.Output = output
 				}
 				toolLogs = append(toolLogs, invocation)
+
+				// 🎓 LEARNING NOTE: Add tool result back to conversation so AI knows what happened
+				// This is like saying: "I ran the command, here's what happened"
 				messages = append(messages, Message{
 					Role:       "tool",
 					Name:       call.Function.Name,
 					ToolCallID: call.ID,
-					Content:    output,
+					Content:    output, // "Teleported Steve to Alice" or "error: player not found"
 				})
 			}
 			if handled {
-				continue
+				continue // Loop again - AI will see tool results and craft final response
 			}
 			return "", toolLogs, fmt.Errorf("no executor available for requested tool")
 		}
