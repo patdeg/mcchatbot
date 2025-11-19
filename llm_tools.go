@@ -303,7 +303,7 @@ func teleportToolDefinition() ToolDefinition {
 		Type: "function",
 		Function: ToolFunctionDefinition{
 			Name:        teleportToolName,
-			Description: "Teleport a Minecraft player to another player when they explicitly request it.",
+			Description: "Teleport the requesting player to another player; never move a third party toward someone else.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -313,7 +313,7 @@ func teleportToolDefinition() ToolDefinition {
 					},
 					"from_player": map[string]interface{}{
 						"type":        "string",
-						"description": "Optional username to teleport from (defaults to the speaker).",
+						"description": "Optional confirmation of the requesting player (must match the speaker).",
 					},
 				},
 				"required": []string{"target_player"},
@@ -555,6 +555,27 @@ func poofToolDefinition() ToolDefinition {
 	}
 }
 
+// golemGuardToolDefinition exposes the friendly iron golem bodyguard helper.
+// Alfred uses it as an emergency hug of armor when campers holler for backup.
+func golemGuardToolDefinition() ToolDefinition {
+	return ToolDefinition{
+		Type: "function",
+		Function: ToolFunctionDefinition{
+			Name:        golemGuardToolName,
+			Description: "Summon a friendly iron golem bodyguard right beside a camper.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"player": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional player to protect (defaults to the speaker).",
+					},
+				},
+			},
+		},
+	}
+}
+
 // parseTeleportArgs unmarshals teleport tool arguments and trims incidental spacing.
 // It ensures both the target and optional source player fields are normalized.
 func parseTeleportArgs(raw string) (teleportArguments, error) {
@@ -674,6 +695,7 @@ func availableTooling(cfg Config) ([]ToolDefinition, map[string]ToolExecutor) {
 			glowAuraToolDefinition(),
 			heartParticlesToolDefinition(),
 			poofToolDefinition(),
+			golemGuardToolDefinition(),
 		}
 		tools = append(tools, eggTools...)
 		executors[floatingCatToolName] = executeFloatingCatTool
@@ -685,6 +707,7 @@ func availableTooling(cfg Config) ([]ToolDefinition, map[string]ToolExecutor) {
 		executors[glowAuraToolName] = executeGlowAuraTool
 		executors[heartsToolName] = executeHeartParticlesTool
 		executors[poofToolName] = executePoofTool
+		executors[golemGuardToolName] = executeGolemGuardTool
 	}
 	if len(tools) == 0 {
 		return nil, nil
@@ -692,22 +715,22 @@ func availableTooling(cfg Config) ([]ToolDefinition, map[string]ToolExecutor) {
 	return tools, executors
 }
 
-// executeTeleportTool moves a camper to another player when the LLM invokes teleport_player.
-// It validates both from/to players before issuing the /tp command.
+// executeTeleportTool moves only the requesting camper to another player when teleport_player is invoked.
+// It blocks attempts to teleport third parties without their own request.
 func executeTeleportTool(ctx context.Context, cfg Config, evt ChatEvent, call ToolCall) (string, error) {
 	args, err := parseTeleportArgs(call.Function.Arguments)
 	if err != nil {
 		return "", err
 	}
-	from := args.FromPlayer
-	if from == "" {
-		from = evt.Player
-	}
-	if from == "" {
-		return "", errors.New("missing from_player")
-	}
+	from := strings.TrimSpace(evt.Player)
 	if args.TargetPlayer == "" {
 		return "", errors.New("missing target_player")
+	}
+	if from == "" {
+		return "", errors.New("missing requesting player")
+	}
+	if args.FromPlayer != "" && !strings.EqualFold(args.FromPlayer, from) {
+		return "", fmt.Errorf("teleports can only move the requesting player (%s)", from)
 	}
 	if err := teleportPlayer(ctx, cfg, from, args.TargetPlayer); err != nil {
 		return "", err
@@ -883,6 +906,19 @@ func executePoofTool(ctx context.Context, cfg Config, evt ChatEvent, call ToolCa
 	return fmt.Sprintf("Poof of smoke near %s.", player), nil
 }
 
+// executeGolemGuardTool drops a friendly iron golem beside the camper for protection.
+// The golem is marked PlayerCreated so it behaves like a normal guardian ally.
+func executeGolemGuardTool(ctx context.Context, cfg Config, evt ChatEvent, call ToolCall) (string, error) {
+	player, err := parsePlayerArg(call.Function.Arguments, evt.Player)
+	if err != nil {
+		return "", err
+	}
+	if err := summonGolemGuard(ctx, cfg, player); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Iron golem spawned to guard %s.", player), nil
+}
+
 // triggerSafeLightning summons a lightning bolt a few blocks in front of a player.
 // Moderation paths use it to add drama when kindness reminders are triggered.
 func triggerSafeLightning(ctx context.Context, cfg Config, player string) error {
@@ -899,6 +935,18 @@ func triggerSafeLightning(ctx context.Context, cfg Config, player string) error 
 // Keeping it centralized simplifies future logging or safety checks.
 func teleportPlayer(ctx context.Context, cfg Config, from, to string) error {
 	command := fmt.Sprintf("tp %s %s\r", from, to)
+	return runScreenCommand(ctx, cfg, command)
+}
+
+// summonGolemGuard spawns a sturdy iron golem next to the given player.
+// The guard is persistent and player-created so it behaves as a friendly ally.
+func summonGolemGuard(ctx context.Context, cfg Config, player string) error {
+	player = strings.TrimSpace(player)
+	if player == "" {
+		return errors.New("missing player for golem guard")
+	}
+	command := fmt.Sprintf("execute at %s run summon iron_golem ~ ~1 ~ {PersistenceRequired:1b,PlayerCreated:1b}\r", player)
+	log.Printf("[BOT] Summoning golem guard near %s", player)
 	return runScreenCommand(ctx, cfg, command)
 }
 

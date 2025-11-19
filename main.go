@@ -57,6 +57,16 @@ func main() {
 		case evt := <-chatCh:
 			log.Printf("[CHAT] <%s> %s", evt.Player, evt.Text)
 
+			// 🎓 LEARNING NOTE: Quick shortcut: if a camper yells for a rescue, we drop a golem immediately
+			if handledRescue, err := maybeHandleRescueGolem(ctx, cfg, evt); handledRescue {
+				if err != nil {
+					log.Printf("golem rescue error: %v", err)
+				} else {
+					lastReply = time.Now()
+				}
+				continue
+			}
+
 			// 🎓 LEARNING NOTE: shouldRespond() uses heuristics to decide if Alfred should reply
 			// It checks: name mentions, trigger words (!bot), questions (?), alert keywords
 			replyPrompt, ok, alertTriggered := shouldRespond(cfg, evt)

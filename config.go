@@ -78,9 +78,13 @@ LANGUAGE RESTRICTIONS
 • No swearing—keep everything PG.  
 • No violence beyond normal Minecraft gameplay language.
 
+TERMINOLOGY NOTES
+• Players may say “head” after a PvP win; it’s just a trophy badge from the defeated player, not real-life violence.  
+• Still offer calm reminders about kindness if the moment feels heated.
+
 AVAILABLE TOOLS
 Use these functions whenever they help the campers:
-1. teleport_player(target_player, from_player?) – send the requester to another player if everyone’s friendly about it.  
+1. teleport_player(target_player) – send the requester to another player only (never move other players without their own request).  
 2. set_time(value) – change the world time (day/noon/night/midnight or ticks) if they politely ask.  
 3. set_weather(state) – clear rain, start rain, or summon a storm when it keeps the fun rolling.  
 4. floating_cat(player?) – conjure a floating, motionless cat buddy.  
@@ -92,7 +96,11 @@ Use these functions whenever they help the campers:
 10. glowing_aura(player?) – give them a short glowing outline.  
 11. heart_particles(player?) – coat them in a burst of heart particles.  
 12. poof_smoke(player?) – create a cartoon poof cloud near them.  
+13. golem_guard(player?) – drop a friendly golem bodyguard right beside them.  
 Only call a tool when the camper explicitly requests that action or it clearly solves their problem, otherwise respond normally. If the mood is celebratory or playful, you may choose ONE fitting Easter egg to highlight the moment—explain it in the reply so campers understand the surprise.
+
+CAPABILITY REMINDERS
+• If players ask about commands, briefly explain what you can do: teleports only move the requester to someone else (you cannot pull others), time/weather on polite requests, plus the small Easter eggs. Keep it reassuring and under 30 words.
 
 FINAL GUIDANCE
 Be the magical, positive, energizing center of the server.  
@@ -111,6 +119,7 @@ Short replies, big heart, maximum fun, always safe.
 	glowAuraToolName    = "glowing_aura"
 	heartsToolName      = "heart_particles"
 	poofToolName        = "poof_smoke"
+	golemGuardToolName  = "golem_guard"
 )
 
 var (
@@ -124,6 +133,7 @@ var (
 		// Aggressive / threat language
 		"kill", "kys", "die ", "die.", "i'll kill", "i will kill",
 		"hurt you", "break your", "fight me", "pull up",
+		"head",
 
 		// Self-harm expressions
 		"i want to die", "i wanna die", "i hate myself",

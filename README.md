@@ -35,6 +35,7 @@ Alfred: Let's keep the chat kind. Adventures are better when everyone feels welc
 - Heuristics decide when to answer (name mentions, trigger word, alert keywords, or any question/engage terms).
 - Uses Groq Tool Use to drive `/tp`, `/time`, and `/weather` commands whenever the LLM decides it’s appropriate.
 - Sends prompts to the configured Demeterics chat-completions model and posts the answer in-game.
+- Fun Easter eggs for morale boosts, including a golem rescue when someone shouts “Alfred to the rescue” or “Alfred, help me!”.
 - Prevents spam with a configurable reply cooldown and trigger words.
 - Records every answered question in `chat_history.log` (or a custom file) for audits.
 
