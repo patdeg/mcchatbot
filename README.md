@@ -5,6 +5,7 @@ SkyBot is a small Go service that watches a Minecraft server log, detects when p
 ## Features
 - Tails the Minecraft log in real time and parses async chat events.
 - Heuristics decide when to answer (name mentions, trigger word, alert keywords, or any question/engage terms).
+- Uses Groq Tool Use to drive `/tp`, `/time`, and `/weather` commands whenever the LLM decides it’s appropriate.
 - Sends prompts to the configured Demeterics chat-completions model and posts the answer in-game.
 - Prevents spam with a configurable reply cooldown and trigger words.
 - Records every answered question in `chat_history.log` (or a custom file) for audits.
@@ -35,6 +36,13 @@ Environment variables allow the agent to be customized without code edits:
 | `MCCHATBOT_REPLY_COOLDOWN` | `30s` | Minimum time between replies to avoid flooding chat. |
 | `MCCHATBOT_ENGAGE_WORDS` | `help,how,where,why,what,can,anyone,tip,idea,question` | Lowercase comma-separated engagement keywords. |
 | `MCCHATBOT_ALERT_WORDS` | `stupid,idiot,hate,kill,dumb,shut up,noob,trash,bully` | Lowercase comma-separated alert words that trigger a kindness reminder. |
+| `MCCHATBOT_ENABLE_NAME_TRIGGER` | `true` | Respond when someone mentions the bot’s name. |
+| `MCCHATBOT_ENABLE_PREFIX_TRIGGER` | `true` | Respond to the configured trigger prefix (e.g., `!bot`). |
+| `MCCHATBOT_ENABLE_QUESTION_TRIGGER` | `true` | Respond to questions (`?`) or configured engage words. |
+| `MCCHATBOT_ENABLE_ALERT_TRIGGER` | `true` | Send kindness reminders when alert words show up. |
+| `MCCHATBOT_ENABLE_TOOL_USE` | `true` | Allow Groq Tool Use across teleport/time/weather helpers. |
+| `MCCHATBOT_ENABLE_WORLD_TOOL` | `true` | Permit SkyBot to call the `/time` and `/weather` helpers (via Tool Use) when campers politely ask for daytime, rain, etc. |
+| `MCCHATBOT_ENABLE_EASTER_EGGS` | `true` | Toggle the fun Easter-egg commands (floating cat, firework, heart particles, etc.). |
 | `MCCHATBOT_RESPONSE_LOG` | `chat_history.log` | File (relative or absolute) where JSONL interaction logs are written. Set empty to disable logging. |
 
 ## Interaction Log
