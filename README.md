@@ -33,7 +33,7 @@ Alfred: Let's keep the chat kind. Adventures are better when everyone feels welc
 ## Features
 - Tails the Minecraft log in real time and parses async chat events.
 - Heuristics decide when to answer (name mentions, trigger word, alert keywords, or any question/engage terms).
-- Uses Groq Tool Use to drive `/tp`, `/time`, and `/weather` commands whenever the LLM decides it’s appropriate.
+- Uses Groq Tool Use to drive `/tp`, `/time`, and `/weather` commands whenever the LLM decides it’s appropriate (teleport to players, coordinates, or spawn).
 - Sends prompts to the configured Demeterics chat-completions model and posts the answer in-game.
 - Fun Easter eggs for morale boosts, including a golem rescue when someone shouts “Alfred to the rescue” or “Alfred, help me!”.
 - Prevents spam with a configurable reply cooldown and trigger words.
@@ -59,6 +59,8 @@ Environment variables allow the agent to be customized without code edits:
 | `DEMETERICS_MODEL` | `meta-llama/llama-4-scout-17b-16e-instruct` | Override the LLM model ID. |
 | `MCCHATBOT_LOG_PATH` | `/usr/local/games/minecraft_server/MyServer/logs/latest.log` | Path to the Minecraft chat log to watch. |
 | `MCCHATBOT_SCREEN_NAME` | `mc-MyServer` | Name of the `screen` session controlling the server. |
+| `MCCHATBOT_SPAWN_POINT` | `0 80 0` | Coordinates Alfred uses for spawn teleports (`x y z` or comma-delimited). |
+| `MCCHATBOT_SPAWN_DIMENSION` | `minecraft:overworld` | Dimension for the spawn point teleport. |
 | `MCCHATBOT_SYSTEM_PROMPT` | Friendly counselor script | Tune the persona/instructions for Alfred. |
 | `MCCHATBOT_NAME` | `Alfred` | Name Alfred listens for when deciding to answer and prefixes responses with. |
 | `MCCHATBOT_TRIGGER` | `!bot` | Prefix that always causes a response (`!bot how do I fly`). |

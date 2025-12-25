@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -48,10 +49,19 @@ type playerArguments struct {
 	Player string `json:"player,omitempty"`
 }
 
+// coordinateArguments wraps explicit XYZ requests for teleports.
+type coordinateArguments struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	Z float64 `json:"z"`
+}
+
 // teleportArguments describe the structured payload for teleport requests.
 type teleportArguments struct {
-	TargetPlayer string `json:"target_player"`
-	FromPlayer   string `json:"from_player,omitempty"`
+	TargetPlayer string               `json:"target_player,omitempty"`
+	Coordinates  *coordinateArguments `json:"coordinates,omitempty"`
+	Destination  string               `json:"destination,omitempty"`
+	FromPlayer   string               `json:"from_player,omitempty"`
 }
 
 // timeArguments wraps the requested world time value.
@@ -117,7 +127,7 @@ type Usage struct {
 func callLLM(ctx context.Context, cfg Config, evt ChatEvent, userMessage string) (string, []ToolInvocation, error) {
 	tools, executors := availableTooling(cfg)
 	messages := []Message{
-		{Role: "system", Content: cfg.SystemPrompt},   // "You are Alfred, the camp counselor..."
+		{Role: "system", Content: cfg.SystemPrompt}, // "You are Alfred, the camp counselor..."
 		{Role: "user", Content: fmt.Sprintf("Player %s says: %s", evt.Player, userMessage)},
 	}
 	return chatWithTools(ctx, cfg, evt, messages, tools, executors)
@@ -134,8 +144,9 @@ func callLLM(ctx context.Context, cfg Config, evt ChatEvent, userMessage string)
 // 4. Loop back to step 1 (up to 3 times) until AI gives final text answer
 //
 // Example: Player: "Alfred tp me to Steve"
-//   Loop 1: AI calls teleport_player(target="Steve") → we run command → success message
-//   Loop 2: AI sees success, responds: "Done! You're now with Steve 🎯"
+//
+//	Loop 1: AI calls teleport_player(target="Steve") → we run command → success message
+//	Loop 2: AI sees success, responds: "Done! You're now with Steve 🎯"
 func chatWithTools(ctx context.Context, cfg Config, evt ChatEvent, messages []Message, tools []ToolDefinition, executors map[string]ToolExecutor) (string, []ToolInvocation, error) {
 	totalTokens := 0
 	var toolLogs []ToolInvocation
@@ -303,7 +314,7 @@ func teleportToolDefinition() ToolDefinition {
 		Type: "function",
 		Function: ToolFunctionDefinition{
 			Name:        teleportToolName,
-			Description: "Teleport the requesting player to another player; never move a third party toward someone else.",
+			Description: "Teleport the requesting player to another player, a specific coordinate, or the configured spawn point; never move a third party without consent.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -311,12 +322,34 @@ func teleportToolDefinition() ToolDefinition {
 						"type":        "string",
 						"description": "Exact username the requester wants to teleport to.",
 					},
+					"coordinates": map[string]interface{}{
+						"type":        "object",
+						"description": "Explicit world coordinates to teleport the requester to.",
+						"properties": map[string]interface{}{
+							"x": map[string]interface{}{
+								"type":        "number",
+								"description": "X coordinate (absolute value, no relative offsets).",
+							},
+							"y": map[string]interface{}{
+								"type":        "number",
+								"description": "Y coordinate.",
+							},
+							"z": map[string]interface{}{
+								"type":        "number",
+								"description": "Z coordinate.",
+							},
+						},
+						"required": []string{"x", "y", "z"},
+					},
+					"destination": map[string]interface{}{
+						"type":        "string",
+						"description": "Use 'spawn' to send them to the configured spawn point.",
+					},
 					"from_player": map[string]interface{}{
 						"type":        "string",
 						"description": "Optional confirmation of the requesting player (must match the speaker).",
 					},
 				},
-				"required": []string{"target_player"},
 			},
 		},
 	}
@@ -585,7 +618,69 @@ func parseTeleportArgs(raw string) (teleportArguments, error) {
 	}
 	payload.TargetPlayer = strings.TrimSpace(payload.TargetPlayer)
 	payload.FromPlayer = strings.TrimSpace(payload.FromPlayer)
+	payload.Destination = strings.ToLower(strings.TrimSpace(payload.Destination))
 	return payload, nil
+}
+
+type teleportTargetKind int
+
+const (
+	teleportTargetPlayer teleportTargetKind = iota + 1
+	teleportTargetCoordinates
+	teleportTargetSpawn
+)
+
+type teleportTarget struct {
+	kind   teleportTargetKind
+	player string
+	coords coordinateArguments
+}
+
+func resolveTeleportTarget(args teleportArguments) (teleportTarget, error) {
+	hasPlayer := args.TargetPlayer != ""
+	hasCoords := args.Coordinates != nil
+	hasDestination := args.Destination != ""
+
+	count := 0
+	if hasPlayer {
+		count++
+	}
+	if hasCoords {
+		count++
+	}
+	if hasDestination {
+		count++
+	}
+
+	if count == 0 {
+		return teleportTarget{}, errors.New("missing target (player, coordinates, or spawn)")
+	}
+	if count > 1 {
+		return teleportTarget{}, errors.New("choose a single teleport target (player, coordinates, or spawn)")
+	}
+	if hasDestination {
+		if args.Destination != "spawn" {
+			return teleportTarget{}, fmt.Errorf("unsupported destination: %s", args.Destination)
+		}
+		return teleportTarget{kind: teleportTargetSpawn}, nil
+	}
+	if hasCoords {
+		if err := validateCoordinates(*args.Coordinates); err != nil {
+			return teleportTarget{}, err
+		}
+		return teleportTarget{kind: teleportTargetCoordinates, coords: *args.Coordinates}, nil
+	}
+	return teleportTarget{kind: teleportTargetPlayer, player: args.TargetPlayer}, nil
+}
+
+func validateCoordinates(coords coordinateArguments) error {
+	values := []float64{coords.X, coords.Y, coords.Z}
+	for _, v := range values {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return errors.New("coordinates must be finite numbers")
+		}
+	}
+	return nil
 }
 
 // parseTimeArgs sanitizes human-friendly inputs (day/noon) or tick counts.
@@ -723,19 +818,39 @@ func executeTeleportTool(ctx context.Context, cfg Config, evt ChatEvent, call To
 		return "", err
 	}
 	from := strings.TrimSpace(evt.Player)
-	if args.TargetPlayer == "" {
-		return "", errors.New("missing target_player")
-	}
 	if from == "" {
 		return "", errors.New("missing requesting player")
 	}
 	if args.FromPlayer != "" && !strings.EqualFold(args.FromPlayer, from) {
 		return "", fmt.Errorf("teleports can only move the requesting player (%s)", from)
 	}
-	if err := teleportPlayer(ctx, cfg, from, args.TargetPlayer); err != nil {
+
+	target, err := resolveTeleportTarget(args)
+	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Teleported %s to %s", from, args.TargetPlayer), nil
+
+	var destLabel string
+	switch target.kind {
+	case teleportTargetPlayer:
+		if err := teleportPlayer(ctx, cfg, from, target.player); err != nil {
+			return "", err
+		}
+		destLabel = target.player
+	case teleportTargetCoordinates:
+		if err := teleportToCoordinates(ctx, cfg, from, target.coords); err != nil {
+			return "", err
+		}
+		destLabel = coordinateLabel(target.coords)
+	case teleportTargetSpawn:
+		if err := teleportToSpawn(ctx, cfg, from); err != nil {
+			return "", err
+		}
+		destLabel = "spawn point"
+	default:
+		return "", errors.New("unsupported teleport target")
+	}
+	return fmt.Sprintf("Teleported %s to %s", from, destLabel), nil
 }
 
 // executeTimeTool sends `time set` commands for the set_time helper.
@@ -931,10 +1046,32 @@ func triggerSafeLightning(ctx context.Context, cfg Config, player string) error 
 	return runScreenCommand(ctx, cfg, command)
 }
 
+func coordinateLabel(coords coordinateArguments) string {
+	return fmt.Sprintf("%s %s %s", formatCoordinate(coords.X), formatCoordinate(coords.Y), formatCoordinate(coords.Z))
+}
+
+func formatCoordinate(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
 // teleportPlayer wraps the basic /tp command for reuse by tool executors.
 // Keeping it centralized simplifies future logging or safety checks.
 func teleportPlayer(ctx context.Context, cfg Config, from, to string) error {
 	command := fmt.Sprintf("tp %s %s\r", from, to)
+	return runScreenCommand(ctx, cfg, command)
+}
+
+func teleportToCoordinates(ctx context.Context, cfg Config, player string, coords coordinateArguments) error {
+	command := fmt.Sprintf("tp %s %s\r", player, coordinateLabel(coords))
+	return runScreenCommand(ctx, cfg, command)
+}
+
+func teleportToSpawn(ctx context.Context, cfg Config, player string) error {
+	command := fmt.Sprintf("execute in %s run tp %s %s\r", cfg.SpawnDimension, player, coordinateLabel(coordinateArguments{
+		X: cfg.SpawnPoint[0],
+		Y: cfg.SpawnPoint[1],
+		Z: cfg.SpawnPoint[2],
+	}))
 	return runScreenCommand(ctx, cfg, command)
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -12,6 +13,8 @@ const (
 	defaultModel        = "meta-llama/llama-4-scout-17b-16e-instruct"
 	defaultLogPath      = "/usr/local/games/minecraft_server/MyServer/logs/latest.log"
 	defaultScreenTarget = "mc-MyServer"
+	defaultSpawnPoint   = "0 80 0"
+	defaultSpawnDim     = "minecraft:overworld"
 
 	// 🎓 LEARNING NOTE: This is the "system prompt" - a 96-line instruction manual that shapes
 	// Alfred's entire personality! This is how we make AI assistants behave consistently.
@@ -83,8 +86,8 @@ TERMINOLOGY NOTES
 • Still offer calm reminders about kindness if the moment feels heated.
 
 AVAILABLE TOOLS
-Use these functions whenever they help the campers:
-1. teleport_player(target_player) – send the requester to another player only (never move other players without their own request).  
+Use these functions whenever they help the campers (only move the requester, never a third party):
+1. teleport_player(...) – teleport the requester to another player, to specific coordinates, or to the configured spawn point.  
 2. set_time(value) – change the world time (day/noon/night/midnight or ticks) if they politely ask.  
 3. set_weather(state) – clear rain, start rain, or summon a storm when it keeps the fun rolling.  
 4. floating_cat(player?) – conjure a floating, motionless cat buddy.  
@@ -100,7 +103,7 @@ Use these functions whenever they help the campers:
 Only call a tool when the camper explicitly requests that action or it clearly solves their problem, otherwise respond normally. If the mood is celebratory or playful, you may choose ONE fitting Easter egg to highlight the moment—explain it in the reply so campers understand the surprise.
 
 CAPABILITY REMINDERS
-• If players ask about commands, briefly explain what you can do: teleports only move the requester to someone else (you cannot pull others), time/weather on polite requests, plus the small Easter eggs. Keep it reassuring and under 30 words.
+• If players ask about commands, briefly explain what you can do: teleports move the requester (never others) to a player, a coordinate, or spawn; time/weather on polite requests; plus the small Easter eggs. Keep it reassuring and under 30 words.
 
 FINAL GUIDANCE
 Be the magical, positive, energizing center of the server.  
@@ -162,7 +165,7 @@ var (
 		"stab", "shoot", "gun", "bomb",
 	}
 
-	teleportRegex  = regexp.MustCompile(`(?i)\b(?:tp|teleport)\s+(?:me\s+)?to\s+([A-Za-z0-9_]{1,16})\b`)
+	teleportRegex  = regexp.MustCompile(`(?i)\b(?:tp|teleport)\b`)
 	timeKeywordSet = map[string]string{
 		"day":      "day",
 		"noon":     "noon",
@@ -185,6 +188,8 @@ type Config struct {
 	Model                 string
 	LogPath               string
 	ScreenSession         string
+	SpawnPoint            [3]float64
+	SpawnDimension        string
 	SystemPrompt          string
 	ReplyCooldown         time.Duration
 	TriggerWord           string
@@ -223,12 +228,18 @@ func loadConfig() (Config, error) {
 	if robotName == "" {
 		robotName = "Alfred"
 	}
+	spawnPoint, err := parseSpawnPoint(envOr("MCCHATBOT_SPAWN_POINT", defaultSpawnPoint))
+	if err != nil {
+		return Config{}, fmt.Errorf("invalid spawn point: %w", err)
+	}
 	toolUse := envBoolOr("MCCHATBOT_ENABLE_TOOL_USE", true)
 	cfg := Config{
 		APIKey:                os.Getenv("DEMETERICS_API_KEY"),
 		Model:                 envOr("DEMETERICS_MODEL", defaultModel),
 		LogPath:               envOr("MCCHATBOT_LOG_PATH", defaultLogPath),
 		ScreenSession:         envOr("MCCHATBOT_SCREEN_NAME", defaultScreenTarget),
+		SpawnPoint:            spawnPoint,
+		SpawnDimension:        strings.TrimSpace(envOr("MCCHATBOT_SPAWN_DIMENSION", defaultSpawnDim)),
 		SystemPrompt:          systemPrompt,
 		ReplyCooldown:         cooldown,
 		TriggerWord:           trigger,
@@ -292,4 +303,23 @@ func parseWordList(raw string, defaults []string) []string {
 		return defaults
 	}
 	return words
+}
+
+// parseSpawnPoint reads a space- or comma-delimited coordinate triple.
+// It accepts floats for flexibility while keeping validation strict.
+func parseSpawnPoint(raw string) ([3]float64, error) {
+	var coords [3]float64
+	cleaned := strings.ReplaceAll(strings.TrimSpace(raw), ",", " ")
+	parts := strings.Fields(cleaned)
+	if len(parts) != 3 {
+		return coords, fmt.Errorf("expected 3 coordinates, got %d", len(parts))
+	}
+	for i, part := range parts {
+		val, err := strconv.ParseFloat(part, 64)
+		if err != nil {
+			return coords, fmt.Errorf("invalid coordinate %q: %w", part, err)
+		}
+		coords[i] = val
+	}
+	return coords, nil
 }
