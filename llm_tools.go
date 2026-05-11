@@ -12,10 +12,17 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// minecraftUsernameRe matches the Minecraft Java username spec exactly:
+// 1-16 chars, ASCII letters/digits/underscore. Anything else (spaces, control
+// chars including \r and \n, quoting characters) could break out of the
+// `screen -X stuff` payload and inject arbitrary server console commands.
+var minecraftUsernameRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,16}$`)
 
 // ToolInvocation captures the raw tool metadata so we can log every action the LLM or
 // moderation layer performed for a given chat event.
@@ -298,6 +305,7 @@ func logInteraction(path string, evt ChatEvent, response string, tools []ToolInv
 // It protects against accidental multi-line posts that could break the console layout.
 func sendToMinecraft(ctx context.Context, cfg Config, msg string) error {
 	sanitized := strings.ReplaceAll(msg, "\n", " ")
+	sanitized = strings.ReplaceAll(sanitized, "\r", " ")
 	sanitized = strings.TrimSpace(sanitized)
 	if sanitized == "" {
 		return errors.New("empty response")
@@ -727,6 +735,9 @@ func parsePlayerArg(raw string, fallback string) (string, error) {
 	if player == "" {
 		return "", errors.New("missing player")
 	}
+	if !minecraftUsernameRe.MatchString(player) {
+		return "", fmt.Errorf("invalid player name %q (must match [A-Za-z0-9_]{1,16})", player)
+	}
 	return player, nil
 }
 
@@ -1089,7 +1100,17 @@ func summonGolemGuard(ctx context.Context, cfg Config, player string) error {
 
 // runScreenCommand injects a single payload into the configured screen session.
 // All console interactions funnel through this helper to keep side effects predictable.
+//
+// As defense-in-depth on top of parsePlayerArg / sendToMinecraft validation,
+// the payload is checked here for embedded \r or \n other than the single
+// trailing \r that terminates a Minecraft console command. Either character
+// would let an attacker who slipped a value through upstream sanitisation
+// inject a second server command.
 func runScreenCommand(ctx context.Context, cfg Config, payload string) error {
+	body := strings.TrimSuffix(payload, "\r")
+	if strings.ContainsAny(body, "\r\n") {
+		return fmt.Errorf("runScreenCommand: payload contains embedded \\r or \\n; refusing to send")
+	}
 	cmd := exec.CommandContext(ctx, "screen", "-S", cfg.ScreenSession, "-p", "0", "-X", "stuff", payload)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
